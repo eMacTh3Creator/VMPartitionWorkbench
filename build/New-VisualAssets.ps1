@@ -169,6 +169,8 @@ Fill-RoundedRectangle $iconGraphics $brushTeal ([System.Drawing.RectangleF]::new
 Fill-RoundedRectangle $iconGraphics $brushAmber ([System.Drawing.RectangleF]::new(44, 128, 104, 52)) 16
 Fill-RoundedRectangle $iconGraphics $brushGreen ([System.Drawing.RectangleF]::new(158, 128, 54, 52)) 16
 $iconGraphics.DrawString('VM', (New-Object System.Drawing.Font('Segoe UI', 34, [System.Drawing.FontStyle]::Bold)), $brushText, 84, 64)
+$logoPngPath = Join-Path $assetDir 'vm-partition-workbench.png'
+$iconBitmap.Save($logoPngPath, [System.Drawing.Imaging.ImageFormat]::Png)
 $iconHandle = $iconBitmap.GetHicon()
 $icon = [System.Drawing.Icon]::FromHandle($iconHandle)
 $iconPath = Join-Path $assetDir 'vm-partition-workbench.ico'
@@ -200,4 +202,5 @@ $brushGreen.Dispose()
 $penLine.Dispose()
 
 Write-Host "Generated $previewPath"
+Write-Host "Generated $logoPngPath"
 Write-Host "Generated $iconPath"

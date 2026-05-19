@@ -84,7 +84,8 @@ Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $
 
 $releaseAssetDir = Join-Path $releaseDir 'assets'
 New-Item -ItemType Directory -Force -Path $releaseAssetDir | Out-Null
-Copy-Item -LiteralPath $iconPath -Destination $releaseAssetDir -Force
+Get-ChildItem -LiteralPath $assetDir -Filter 'vm-partition-workbench.*' -File |
+    Copy-Item -Destination $releaseAssetDir -Force
 
 $releaseInstallerDir = Join-Path $releaseDir 'installer'
 New-Item -ItemType Directory -Force -Path $releaseInstallerDir | Out-Null

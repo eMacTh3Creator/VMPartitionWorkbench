@@ -1,4 +1,16 @@
-# VM Partition Workbench
+<p align="center">
+  <img src="assets/vm-partition-workbench.png" alt="VM Partition Workbench logo" width="96" height="96">
+</p>
+
+<h1 align="center">VM Partition Workbench</h1>
+
+<p align="center">
+  <a href="https://emacth3creator.github.io/VMPartitionWorkbench/">Website</a>
+  ·
+  <a href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Latest release</a>
+  ·
+  <a href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/tag/v0.1.0">First release v0.1.0</a>
+</p>
 
 PowerShell + WPF desktop tool for VMware-oriented virtual disk partition work.
 
