@@ -1,0 +1,27 @@
+# PowerShell and build output
+*.ps1xml
+*.psd1.bak
+*.psm1.bak
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Local VM artifacts
+*.vmdk
+*.vhd
+*.vhdx
+*.vmem
+*.vmsn
+*.vmss
+*.nvram
+*.lck/
+
+# Keep release artifacts, but ignore ad-hoc large archives
+*.7z
+*.rar

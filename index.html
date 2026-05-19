@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VM Partition Workbench</title>
+  <meta name="description" content="A VMware-first partition maintenance workbench for virtual disk resize, mounted partition resize, and GParted boot workflows.">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111113;
+      --ink: #f4f4f5;
+      --muted: #d4d4d8;
+      --soft: #a1a1aa;
+      --panel: #18181b;
+      --panel-2: #1f1f23;
+      --line: #3f3f46;
+      --teal: #0f766e;
+      --teal-hi: #14b8a6;
+      --amber: #f59e0b;
+      --green: #22c55e;
+      --red: #ef4444;
+      --max: 1120px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.5;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .site-header {
+      position: fixed;
+      z-index: 20;
+      inset: 0 0 auto 0;
+      border-bottom: 1px solid rgba(244, 244, 245, 0.12);
+      background: rgba(17, 17, 19, 0.86);
+      backdrop-filter: blur(14px);
+    }
+
+    .nav {
+      width: min(var(--max), calc(100% - 32px));
+      margin: 0 auto;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      letter-spacing: 0;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--teal), var(--amber));
+      display: inline-grid;
+      place-items: center;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .hero {
+      min-height: 86vh;
+      display: grid;
+      align-items: end;
+      padding: 112px 0 56px;
+      background:
+        linear-gradient(90deg, rgba(17, 17, 19, 0.96) 0%, rgba(17, 17, 19, 0.82) 44%, rgba(17, 17, 19, 0.46) 100%),
+        linear-gradient(0deg, rgba(17, 17, 19, 1) 0%, rgba(17, 17, 19, 0.12) 30%),
+        url("docs/assets/app-preview.png") center right / min(1100px, 82vw) auto no-repeat,
+        #111113;
+    }
+
+    .hero-inner {
+      width: min(var(--max), calc(100% - 32px));
+      margin: 0 auto;
+      padding-bottom: 4vh;
+    }
+
+    .eyebrow {
+      color: var(--teal-hi);
+      font-size: 14px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin: 0 0 14px;
+    }
+
+    h1 {
+      font-size: clamp(44px, 8vw, 86px);
+      line-height: 0.96;
+      letter-spacing: 0;
+      max-width: 720px;
+      margin: 0;
+    }
+
+    .hero-copy {
+      max-width: 690px;
+      color: var(--muted);
+      font-size: clamp(17px, 2vw, 22px);
+      margin: 22px 0 0;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 46px;
+      padding: 0 18px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: var(--teal);
+      color: white;
+      font-weight: 800;
+    }
+
+    .button:hover {
+      background: #0d9488;
+    }
+
+    .button.secondary {
+      background: rgba(244, 244, 245, 0.08);
+      border-color: rgba(244, 244, 245, 0.2);
+      color: var(--ink);
+    }
+
+    .button.secondary:hover {
+      background: rgba(244, 244, 245, 0.14);
+    }
+
+    .meta {
+      margin-top: 18px;
+      color: var(--soft);
+      font-size: 14px;
+    }
+
+    main {
+      background: var(--bg);
+    }
+
+    section {
+      border-top: 1px solid rgba(244, 244, 245, 0.1);
+      padding: 72px 0;
+    }
+
+    .section-inner {
+      width: min(var(--max), calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .section-title {
+      max-width: 760px;
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      font-size: clamp(30px, 4vw, 48px);
+      line-height: 1.05;
+      letter-spacing: 0;
+      margin: 0 0 12px;
+    }
+
+    .section-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .feature {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 174px;
+    }
+
+    .feature strong {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 9px;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .workflow {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .shot {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      display: block;
+      background: var(--panel);
+    }
+
+    .steps {
+      display: grid;
+      gap: 10px;
+      counter-reset: step;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .steps li {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 40px 1fr;
+      gap: 14px;
+      align-items: start;
+      padding: 16px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      color: var(--muted);
+    }
+
+    .steps li::before {
+      content: counter(step);
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      background: var(--teal);
+      color: white;
+      font-weight: 900;
+    }
+
+    .callout {
+      border: 1px solid rgba(245, 158, 11, 0.45);
+      background: rgba(245, 158, 11, 0.09);
+      border-radius: 8px;
+      padding: 18px;
+      color: #fde68a;
+      margin-top: 18px;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: 14px 16px;
+      text-align: left;
+      border-bottom: 1px solid rgba(244, 244, 245, 0.09);
+      vertical-align: top;
+    }
+
+    .matrix th {
+      color: var(--ink);
+      background: var(--panel-2);
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .matrix td {
+      color: var(--muted);
+    }
+
+    code {
+      color: #ccfbf1;
+      background: rgba(20, 184, 166, 0.1);
+      border: 1px solid rgba(20, 184, 166, 0.22);
+      border-radius: 6px;
+      padding: 2px 5px;
+    }
+
+    pre {
+      margin: 0;
+      padding: 18px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: #0b0b0c;
+      overflow-x: auto;
+      color: #e4e4e7;
+    }
+
+    .footer {
+      padding: 32px 0 44px;
+      color: var(--soft);
+      border-top: 1px solid rgba(244, 244, 245, 0.1);
+    }
+
+    .footer .section-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 860px) {
+      .nav-links {
+        display: none;
+      }
+
+      .hero {
+        min-height: 88vh;
+        background:
+          linear-gradient(0deg, rgba(17, 17, 19, 1) 0%, rgba(17, 17, 19, 0.55) 58%, rgba(17, 17, 19, 0.88) 100%),
+          url("docs/assets/app-preview.png") center 88px / 900px auto no-repeat,
+          #111113;
+        align-items: end;
+      }
+
+      .hero-inner {
+        padding-top: 330px;
+      }
+
+      .feature-grid,
+      .workflow {
+        grid-template-columns: 1fr;
+      }
+
+      section {
+        padding: 52px 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="#">
+        <span class="brand-mark">VM</span>
+        <span>VM Partition Workbench</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#workflow">Workflow</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/emacth3creator/VMPartitionWorkbench">GitHub</a>
+      </div>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <p class="eyebrow">PowerShell + WPF - portable exe - MIT licensed</p>
+      <h1>VM Partition Workbench</h1>
+      <p class="hero-copy">A VMware-first desktop tool for expanding virtual disks, resizing mounted Windows partitions, and preparing GParted Live boot workflows for partition moves.</p>
+      <div class="actions">
+        <a class="button" href="release/VMPartitionWorkbench.exe">Download exe</a>
+        <a class="button secondary" href="release/VMPartitionWorkbench-portable.zip">Portable zip</a>
+        <a class="button secondary" href="#quickstart">Quick start</a>
+      </div>
+      <p class="meta">Latest local build - run as administrator - unsigned executable - always snapshot before partition work.</p>
+    </div>
+  </section>
+
+  <main>
+    <section id="features">
+      <div class="section-inner">
+        <div class="section-title">
+          <h2>Built around the real VM resize job</h2>
+          <p>Start from the VMX, choose the backing disk, review a command plan, and keep the host boot disk out of the blast radius.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature">
+            <strong>VMX disk discovery</strong>
+            <p>Load a VMware configuration file and list attached VMDK, VHD, and VHDX disks with capacity and path checks.</p>
+          </article>
+          <article class="feature">
+            <strong>VMDK expansion</strong>
+            <p>Uses VMware's <code>vmware-vdiskmanager.exe</code> when available, so the disk container grows through VMware tooling.</p>
+          </article>
+          <article class="feature">
+            <strong>VHD/VHDX attach</strong>
+            <p>Mount, inspect, resize, and dismount Microsoft virtual disks with native Windows disk tooling.</p>
+          </article>
+          <article class="feature">
+            <strong>Partition resize guardrails</strong>
+            <p>Uses <code>Resize-Partition</code> for mounted guest disks and refuses to target the Windows boot or system disk.</p>
+          </article>
+          <article class="feature">
+            <strong>GParted move workflow</strong>
+            <p>Attaches a GParted Live ISO to the VMX and adds boot delay, giving you a proven editor for partition moves.</p>
+          </article>
+          <article class="feature">
+            <strong>Plan before run</strong>
+            <p>Every action is shown before execution, and the log records each native command for auditability.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="workflow">
+      <div class="section-inner">
+        <div class="workflow">
+          <div>
+            <div class="section-title">
+              <h2>The move-safe VMware path</h2>
+              <p>Host tooling grows the virtual disk. GParted Live moves partitions inside the guest disk where the file systems can be handled correctly.</p>
+            </div>
+            <ol class="steps">
+              <li>Power off the VM and take a VMware snapshot.</li>
+              <li>Load the VMX, choose the virtual disk, and enable backup.</li>
+              <li>Expand the disk container or mount a VHD/VHDX for supported Windows resize.</li>
+              <li>Attach GParted Live to move partitions or perform complex layout edits.</li>
+            </ol>
+            <div class="callout">Partition moves are intentionally delegated to GParted Live. The app prepares the VM and keeps the workflow repeatable instead of raw-editing file systems from the host.</div>
+          </div>
+          <img class="shot" src="docs/assets/app-preview.png" alt="VM Partition Workbench desktop app preview">
+        </div>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="section-inner">
+        <div class="section-title">
+          <h2>Download and run</h2>
+          <p>The release is portable. Use the exe for normal GUI work, or the PowerShell script when you want to inspect or automate the commands.</p>
+        </div>
+        <table class="matrix">
+          <thead>
+            <tr>
+              <th>Artifact</th>
+              <th>Use it for</th>
+              <th>Link</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>VMPartitionWorkbench.exe</code></td>
+              <td>Normal desktop use. Requires administrator rights for disk changes.</td>
+              <td><a href="release/VMPartitionWorkbench.exe">Download exe</a></td>
+            </tr>
+            <tr>
+              <td><code>VMPartitionWorkbench-portable.zip</code></td>
+              <td>Full bundle with exe, script, optional install scripts, license, and checksums.</td>
+              <td><a href="release/VMPartitionWorkbench-portable.zip">Download zip</a></td>
+            </tr>
+            <tr>
+              <td><code>src/VMPartitionWorkbench.ps1</code></td>
+              <td>Auditable source and CLI mode.</td>
+              <td><a href="src/VMPartitionWorkbench.ps1">View script</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="quickstart">
+      <div class="section-inner">
+        <div class="section-title">
+          <h2>Quick start</h2>
+          <p>Open as administrator, load a VMX, inspect the disk, then build a plan before touching anything.</p>
+        </div>
+        <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File .\src\VMPartitionWorkbench.ps1</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="section-inner">
+      <span>VM Partition Workbench - MIT licensed virtual disk maintenance tooling</span>
+      <span><a href="docs/SAFETY.md">Safety model</a> - <a href="docs/VMWARE_WORKFLOW.md">VMware workflow</a></span>
+    </div>
+  </footer>
+</body>
+</html>
