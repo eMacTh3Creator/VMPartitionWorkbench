@@ -404,11 +404,11 @@
       <h1>VM Partition Workbench</h1>
       <p class="hero-copy">A VMware-first desktop tool for expanding virtual disks, resizing mounted Windows partitions, and preparing GParted Live boot workflows for partition moves.</p>
       <div class="actions">
-        <a class="button" href="release/VMPartitionWorkbench.exe">Download exe</a>
-        <a class="button secondary" href="release/VMPartitionWorkbench-portable.zip">Portable zip</a>
+        <a class="button" data-download="windows-exe" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Download latest exe</a>
+        <a class="button secondary" data-download="portable-zip" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Portable zip</a>
         <a class="button secondary" href="#quickstart">Quick start</a>
       </div>
-      <p class="meta">Latest local build - run as administrator - unsigned executable - always snapshot before partition work.</p>
+      <p class="meta"><span data-release-label>Latest GitHub release</span> - versioned Windows filenames - run as administrator - always snapshot before partition work.</p>
     </div>
   </section>
 
@@ -485,14 +485,14 @@
           </thead>
           <tbody>
             <tr>
-              <td><code>VMPartitionWorkbench.exe</code></td>
+              <td><code data-exe-name>VMPartitionWorkbench-v*-win-x64.exe</code></td>
               <td>Normal desktop use. Requires administrator rights for disk changes.</td>
-              <td><a href="release/VMPartitionWorkbench.exe">Download exe</a></td>
+              <td><a data-download="windows-exe" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Download latest exe</a></td>
             </tr>
             <tr>
-              <td><code>VMPartitionWorkbench-portable.zip</code></td>
+              <td><code data-zip-name>VMPartitionWorkbench-v*-portable.zip</code></td>
               <td>Full bundle with exe, script, optional install scripts, license, and checksums.</td>
-              <td><a href="release/VMPartitionWorkbench-portable.zip">Download zip</a></td>
+              <td><a data-download="portable-zip" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Download latest zip</a></td>
             </tr>
             <tr>
               <td><code>src/VMPartitionWorkbench.ps1</code></td>
@@ -521,5 +521,76 @@
       <span><a href="docs/SAFETY.md">Safety model</a> - <a href="docs/VMWARE_WORKFLOW.md">VMware workflow</a></span>
     </div>
   </footer>
+  <script>
+    (() => {
+      const repo = "eMacTh3Creator/VMPartitionWorkbench";
+      const releaseUrl = `https://github.com/${repo}/releases/latest`;
+      const apiUrl = `https://api.github.com/repos/${repo}/releases/latest`;
+      const patterns = {
+        "windows-exe": /^VMPartitionWorkbench-v[\d.]+-win-x64\.exe$/i,
+        "portable-zip": /^VMPartitionWorkbench-v[\d.]+-portable\.zip$/i
+      };
+
+      const setLinks = (type, url, fileName) => {
+        document.querySelectorAll(`[data-download="${type}"]`).forEach((link) => {
+          link.href = url;
+          link.setAttribute("aria-label", `Download ${fileName}`);
+        });
+      };
+
+      const setText = (selector, text) => {
+        document.querySelectorAll(selector).forEach((node) => {
+          node.textContent = text;
+        });
+      };
+
+      const applyRelease = (release) => {
+        const assets = release.assets || [];
+        const exe = assets.find((asset) => patterns["windows-exe"].test(asset.name));
+        const zip = assets.find((asset) => patterns["portable-zip"].test(asset.name));
+
+        if (exe) {
+          setLinks("windows-exe", exe.browser_download_url, exe.name);
+          setText("[data-exe-name]", exe.name);
+        }
+        if (zip) {
+          setLinks("portable-zip", zip.browser_download_url, zip.name);
+          setText("[data-zip-name]", zip.name);
+        }
+        if (release.tag_name) {
+          setText("[data-release-label]", `Latest release ${release.tag_name}`);
+        }
+      };
+
+      const applyManifestFallback = async () => {
+        const response = await fetch("release/latest.json", { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("No local release manifest");
+        }
+        const manifest = await response.json();
+        const assets = [
+          { name: manifest.windowsExe, browser_download_url: `release/${manifest.windowsExe}` },
+          { name: manifest.portableZip, browser_download_url: `release/${manifest.portableZip}` }
+        ];
+        applyRelease({ tag_name: manifest.tagName, assets });
+      };
+
+      fetch(apiUrl, { headers: { Accept: "application/vnd.github+json" }, cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Latest GitHub release unavailable");
+          }
+          return response.json();
+        })
+        .then(applyRelease)
+        .catch(() => {
+          applyManifestFallback().catch(() => {
+            document.querySelectorAll("[data-download]").forEach((link) => {
+              link.href = releaseUrl;
+            });
+          });
+        });
+    })();
+  </script>
 </body>
 </html>

@@ -19,9 +19,24 @@ if (-not (Test-IsAdministrator)) {
 }
 
 $sourceDir = Split-Path -Parent $PSScriptRoot
-$releaseExe = Join-Path $sourceDir 'release\VMPartitionWorkbench.exe'
-if (-not (Test-Path -LiteralPath $releaseExe)) {
-    throw "Release executable not found: $releaseExe"
+$releaseRoot = if (Test-Path -LiteralPath (Join-Path $sourceDir 'release')) {
+    Join-Path $sourceDir 'release'
+}
+else {
+    $sourceDir
+}
+
+$releaseExe = Get-ChildItem -LiteralPath $releaseRoot -Filter 'VMPartitionWorkbench-v*-win-x64.exe' -File -ErrorAction SilentlyContinue |
+    Sort-Object Name -Descending |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $releaseExe) {
+    $fallbackExe = Join-Path $releaseRoot 'VMPartitionWorkbench.exe'
+    if (Test-Path -LiteralPath $fallbackExe) {
+        $releaseExe = $fallbackExe
+    }
+}
+if (-not $releaseExe) {
+    throw "Release executable not found in $releaseRoot"
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null

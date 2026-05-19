@@ -27,7 +27,7 @@ Always power off the VM and take a VMware snapshot before making partition chang
 
 ### Option A: portable exe
 
-1. Download `VMPartitionWorkbench.exe` from the release folder or GitHub release.
+1. Download the latest `VMPartitionWorkbench-v*-win-x64.exe` from the release folder or GitHub release.
 2. Right-click it and choose **Run as administrator**.
 3. Choose a `.vmx` file and load the attached virtual disks.
 4. Choose a disk, build a plan, review it, then run it.
@@ -84,11 +84,12 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\Build-Release.ps
 
 Artifacts are written to `release\`:
 
-- `VMPartitionWorkbench.exe`
+- `VMPartitionWorkbench-v0.1.0-win-x64.exe`
 - `VMPartitionWorkbench.ps1`
 - `Run-VMPartitionWorkbench.cmd`
-- `VMPartitionWorkbench-portable.zip`
+- `VMPartitionWorkbench-v0.1.0-portable.zip`
 - `installer\Install-VMPartitionWorkbench.ps1`
+- `latest.json`
 - `checksums.txt`
 
 ## GitHub Pages

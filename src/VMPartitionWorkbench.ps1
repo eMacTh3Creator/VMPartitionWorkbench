@@ -734,6 +734,84 @@ function Add-WpfAssemblies {
     Add-Type -AssemblyName PresentationCore
     Add-Type -AssemblyName WindowsBase
     Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
+}
+
+function New-AppIconImageSource {
+    Add-WpfAssemblies
+
+    $bitmap = New-Object System.Drawing.Bitmap 256, 256
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+    $panel = [System.Drawing.Color]::FromArgb(24, 24, 27)
+    $teal = [System.Drawing.Color]::FromArgb(15, 118, 110)
+    $amber = [System.Drawing.Color]::FromArgb(245, 158, 11)
+    $green = [System.Drawing.Color]::FromArgb(34, 197, 94)
+    $white = [System.Drawing.Color]::FromArgb(244, 244, 245)
+
+    $brushPanel = New-Object System.Drawing.SolidBrush($panel)
+    $brushTeal = New-Object System.Drawing.SolidBrush($teal)
+    $brushAmber = New-Object System.Drawing.SolidBrush($amber)
+    $brushGreen = New-Object System.Drawing.SolidBrush($green)
+    $brushWhite = New-Object System.Drawing.SolidBrush($white)
+    $font = New-Object System.Drawing.Font('Segoe UI', 34, [System.Drawing.FontStyle]::Bold)
+
+    function Add-IconRoundedRect {
+        param(
+            [System.Drawing.Graphics]$Graphics,
+            [System.Drawing.Brush]$Brush,
+            [System.Drawing.RectangleF]$Rectangle,
+            [float]$Radius
+        )
+
+        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $diameter = $Radius * 2
+        $arc = [System.Drawing.RectangleF]::new($Rectangle.X, $Rectangle.Y, $diameter, $diameter)
+        $path.AddArc($arc, 180, 90)
+        $arc.X = $Rectangle.Right - $diameter
+        $path.AddArc($arc, 270, 90)
+        $arc.Y = $Rectangle.Bottom - $diameter
+        $path.AddArc($arc, 0, 90)
+        $arc.X = $Rectangle.X
+        $path.AddArc($arc, 90, 90)
+        $path.CloseFigure()
+        $Graphics.FillPath($Brush, $path)
+        $path.Dispose()
+    }
+
+    try {
+        $graphics.Clear([System.Drawing.Color]::Transparent)
+        Add-IconRoundedRect $graphics $brushPanel ([System.Drawing.RectangleF]::new(18, 18, 220, 220)) 36
+        Add-IconRoundedRect $graphics $brushTeal ([System.Drawing.RectangleF]::new(44, 56, 168, 52)) 16
+        Add-IconRoundedRect $graphics $brushAmber ([System.Drawing.RectangleF]::new(44, 128, 104, 52)) 16
+        Add-IconRoundedRect $graphics $brushGreen ([System.Drawing.RectangleF]::new(158, 128, 54, 52)) 16
+        $graphics.DrawString('VM', $font, $brushWhite, 84, 64)
+
+        $stream = New-Object System.IO.MemoryStream
+        $bitmap.Save($stream, [System.Drawing.Imaging.ImageFormat]::Png)
+        $stream.Position = 0
+
+        $image = New-Object System.Windows.Media.Imaging.BitmapImage
+        $image.BeginInit()
+        $image.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $image.StreamSource = $stream
+        $image.EndInit()
+        $image.Freeze()
+        $stream.Dispose()
+
+        return $image
+    }
+    finally {
+        $font.Dispose()
+        $brushPanel.Dispose()
+        $brushTeal.Dispose()
+        $brushAmber.Dispose()
+        $brushGreen.Dispose()
+        $brushWhite.Dispose()
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
 }
 
 function Show-AppError {
@@ -1036,6 +1114,7 @@ function Start-AppGui {
 
     $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
     $window = [Windows.Markup.XamlReader]::Load($reader)
+    $window.Icon = New-AppIconImageSource
 
     $controls = @{}
     @(

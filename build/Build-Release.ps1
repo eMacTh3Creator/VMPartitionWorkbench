@@ -1,22 +1,33 @@
 #requires -version 5.1
 [CmdletBinding()]
 param(
-    [string]$Configuration = 'Release'
+[string]$Configuration = 'Release'
 )
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
+$Version = '0.1.0'
+$FileVersion = "$Version.0"
+$ReleaseTag = "v$Version"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $srcDir = Join-Path $repoRoot 'src'
 $releaseDir = Join-Path $repoRoot 'release'
 $assetDir = Join-Path $repoRoot 'assets'
 $scriptPath = Join-Path $srcDir 'VMPartitionWorkbench.ps1'
-$exePath = Join-Path $releaseDir 'VMPartitionWorkbench.exe'
+$exeFileName = "VMPartitionWorkbench-$ReleaseTag-win-x64.exe"
+$zipFileName = "VMPartitionWorkbench-$ReleaseTag-portable.zip"
+$exePath = Join-Path $releaseDir $exeFileName
 $cmdPath = Join-Path $srcDir 'Run-VMPartitionWorkbench.cmd'
 $iconPath = Join-Path $assetDir 'vm-partition-workbench.ico'
 
 New-Item -ItemType Directory -Force -Path $releaseDir, $assetDir | Out-Null
+Remove-Item -LiteralPath (Join-Path $releaseDir 'installer') -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $releaseDir 'assets') -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem -LiteralPath $releaseDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match '^VMPartitionWorkbench(?:-v[\d.]+-(?:win-x64|portable)|-portable)?\.(?:exe|zip)$' -or $_.Name -in @('checksums.txt', 'latest.json') } |
+    Remove-Item -Force
 
 if (-not (Test-Path -LiteralPath $iconPath)) {
     & (Join-Path $PSScriptRoot 'New-VisualAssets.ps1') | Out-Host
@@ -50,7 +61,7 @@ $ps2exeArgs = @{
     description   = 'VMware-oriented virtual disk partition maintenance workbench'
     company       = 'Open Source'
     product       = 'VM Partition Workbench'
-    version       = '0.1.0.0'
+    version       = $FileVersion
     copyright     = 'MIT'
     x64           = $true
     STA           = $true
@@ -71,15 +82,19 @@ Copy-Item -LiteralPath $cmdPath -Destination (Join-Path $releaseDir 'Run-VMParti
 Copy-Item -LiteralPath (Join-Path $repoRoot 'README.md') -Destination (Join-Path $releaseDir 'README.md') -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $releaseDir 'LICENSE') -Force
 
+$releaseAssetDir = Join-Path $releaseDir 'assets'
+New-Item -ItemType Directory -Force -Path $releaseAssetDir | Out-Null
+Copy-Item -LiteralPath $iconPath -Destination $releaseAssetDir -Force
+
 $releaseInstallerDir = Join-Path $releaseDir 'installer'
 New-Item -ItemType Directory -Force -Path $releaseInstallerDir | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'installer\Install-VMPartitionWorkbench.ps1') -Destination $releaseInstallerDir -Force
 Copy-Item -LiteralPath (Join-Path $repoRoot 'installer\Uninstall-VMPartitionWorkbench.ps1') -Destination $releaseInstallerDir -Force
 
 $readmeText = @(
-    'VM Partition Workbench portable release',
+    "VM Partition Workbench $ReleaseTag portable release",
     '',
-    'Run VMPartitionWorkbench.exe as administrator.',
+    "Run $exeFileName as administrator.",
     'The script version is included for auditing and CLI usage:',
     '  powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File .\VMPartitionWorkbench.ps1',
     '',
@@ -87,10 +102,19 @@ $readmeText = @(
 )
 Set-Content -LiteralPath (Join-Path $releaseDir 'README.txt') -Value $readmeText -Encoding ASCII
 
-$zipPath = Join-Path $releaseDir 'VMPartitionWorkbench-portable.zip'
+$latestManifest = [ordered]@{
+    version     = $Version
+    tagName     = $ReleaseTag
+    windowsExe  = $exeFileName
+    portableZip = $zipFileName
+    releaseUrl  = "https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/tag/$ReleaseTag"
+}
+($latestManifest | ConvertTo-Json -Depth 3) | Set-Content -LiteralPath (Join-Path $releaseDir 'latest.json') -Encoding UTF8
+
+$zipPath = Join-Path $releaseDir $zipFileName
 Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 $preZipHashRows = Get-ChildItem -LiteralPath $releaseDir -File -Recurse |
-    Where-Object { $_.Name -notin @('checksums.txt', 'VMPartitionWorkbench-portable.zip') } |
+    Where-Object { $_.Name -notin @('checksums.txt', $zipFileName) } |
     Sort-Object FullName |
     ForEach-Object {
         $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
@@ -100,13 +124,15 @@ $preZipHashRows = Get-ChildItem -LiteralPath $releaseDir -File -Recurse |
 Set-Content -LiteralPath (Join-Path $releaseDir 'checksums.txt') -Value $preZipHashRows -Encoding ASCII
 
 $zipSources = @(
-    (Join-Path $releaseDir 'VMPartitionWorkbench.exe'),
+    (Join-Path $releaseDir $exeFileName),
     (Join-Path $releaseDir 'VMPartitionWorkbench.ps1'),
     (Join-Path $releaseDir 'Run-VMPartitionWorkbench.cmd'),
     (Join-Path $releaseDir 'README.md'),
     (Join-Path $releaseDir 'README.txt'),
     (Join-Path $releaseDir 'LICENSE'),
+    (Join-Path $releaseDir 'latest.json'),
     (Join-Path $releaseDir 'checksums.txt'),
+    (Join-Path $releaseDir 'assets'),
     (Join-Path $releaseDir 'installer')
 )
 
