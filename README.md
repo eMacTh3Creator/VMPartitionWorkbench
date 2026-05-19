@@ -24,6 +24,7 @@ It is built for the practical VM workflow: expand a virtual disk, mount and resi
 - Expands `.vmdk` disks with `vmware-vdiskmanager.exe` when VMware Workstation or VDDK is installed.
 - Expands `.vhd` and `.vhdx` disks with Windows `diskpart`.
 - Mounts and dismounts `.vhd` and `.vhdx` files for host-side maintenance.
+- Visualizes host-exposed partitions as a disk map with click selection, right-click actions, and drag-to-resize plan targeting.
 - Resizes a mounted partition with `Resize-Partition`.
 - Refuses to resize the Windows boot/system disk.
 - Attaches a GParted Live ISO to a `.vmx` file and adds a boot delay so you can move partitions inside the VM.
@@ -96,10 +97,10 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\Build-Release.ps
 
 Artifacts are written to `release\`:
 
-- `VMPartitionWorkbench-v0.1.0-win-x64.exe`
+- `VMPartitionWorkbench-v0.2.0-win-x64.exe`
 - `VMPartitionWorkbench.ps1`
 - `Run-VMPartitionWorkbench.cmd`
-- `VMPartitionWorkbench-v0.1.0-portable.zip`
+- `VMPartitionWorkbench-v0.2.0-portable.zip`
 - `installer\Install-VMPartitionWorkbench.ps1`
 - `latest.json`
 - `checksums.txt`

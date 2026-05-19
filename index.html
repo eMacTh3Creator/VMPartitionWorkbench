@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VM Partition Workbench</title>
-  <meta name="description" content="A VMware-first partition maintenance workbench for virtual disk resize, mounted partition resize, and GParted boot workflows.">
+  <meta name="description" content="A VMware-first partition maintenance workbench with visual partition maps, virtual disk resize, mounted partition resize, and GParted boot workflows.">
   <style>
     :root {
       color-scheme: dark;
@@ -402,7 +402,7 @@
     <div class="hero-inner">
       <p class="eyebrow">PowerShell + WPF - portable exe - MIT licensed</p>
       <h1>VM Partition Workbench</h1>
-      <p class="hero-copy">A VMware-first desktop tool for expanding virtual disks, resizing mounted Windows partitions, and preparing GParted Live boot workflows for partition moves.</p>
+      <p class="hero-copy">A VMware-first desktop tool for expanding virtual disks, visualizing host-exposed partitions, dragging resize targets, and preparing GParted Live boot workflows for partition moves.</p>
       <div class="actions">
         <a class="button" data-download="windows-exe" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Download latest exe</a>
         <a class="button secondary" data-download="portable-zip" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Portable zip</a>
@@ -418,7 +418,7 @@
       <div class="section-inner">
         <div class="section-title">
           <h2>Built around the real VM resize job</h2>
-          <p>Start from the VMX, choose the backing disk, review a command plan, and keep the host boot disk out of the blast radius.</p>
+          <p>Start from the VMX, choose the backing disk, inspect partitions visually, review a command plan, and keep the host boot disk out of the blast radius.</p>
         </div>
         <div class="feature-grid">
           <article class="feature">
@@ -434,16 +434,16 @@
             <p>Mount, inspect, resize, and dismount Microsoft virtual disks with native Windows disk tooling.</p>
           </article>
           <article class="feature">
-            <strong>Partition resize guardrails</strong>
-            <p>Uses <code>Resize-Partition</code> for mounted guest disks and refuses to target the Windows boot or system disk.</p>
+            <strong>Visual partition map</strong>
+            <p>Shows host-exposed partitions as a disk map with click selection, right-click actions, and drag-to-resize plan targeting.</p>
           </article>
           <article class="feature">
             <strong>GParted move workflow</strong>
             <p>Attaches a GParted Live ISO to the VMX and adds boot delay, giving you a proven editor for partition moves.</p>
           </article>
           <article class="feature">
-            <strong>Plan before run</strong>
-            <p>Every action is shown before execution, and the log records each native command for auditability.</p>
+            <strong>Resize guardrails</strong>
+            <p>Uses <code>Resize-Partition</code> for mounted guest disks, blocks the Windows boot/system disk, and logs each native command.</p>
           </article>
         </div>
       </div>
@@ -460,7 +460,7 @@
             <ol class="steps">
               <li>Power off the VM and take a VMware snapshot.</li>
               <li>Load the VMX, choose the virtual disk, and enable backup.</li>
-              <li>Expand the disk container or mount a VHD/VHDX for supported Windows resize.</li>
+              <li>Expand the disk container or mount a VHD/VHDX, then use the visual map to select and stage supported resize targets.</li>
               <li>Attach GParted Live to move partitions or perform complex layout edits.</li>
             </ol>
             <div class="callout">Partition moves are intentionally delegated to GParted Live. The app prepares the VM and keeps the workflow repeatable instead of raw-editing file systems from the host.</div>

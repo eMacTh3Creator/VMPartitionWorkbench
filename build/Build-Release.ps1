@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
-$Version = '0.1.0'
+$Version = '0.2.0'
 $FileVersion = "$Version.0"
 $ReleaseTag = "v$Version"
 

@@ -22,9 +22,13 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 
 $script:AppName = 'VM Partition Workbench'
-$script:AppVersion = '0.1.0'
+$script:AppVersion = '0.2.0'
 $script:LogLines = New-Object 'System.Collections.ObjectModel.ObservableCollection[string]'
 $script:CurrentPlan = @()
+$script:PartitionMapRows = @()
+$script:SelectedPartitionRow = $null
+$script:PartitionDragState = $null
+$script:PartitionSelectionUpdating = $false
 
 function Write-AppLog {
     param(
@@ -393,7 +397,7 @@ function Build-OperationPlan {
         [bool]$ResizePartition = $false,
         [int]$PartitionDiskNumber = -1,
         [int]$PartitionNumber = -1,
-        [int]$PartitionSizeGB = 0,
+        [double]$PartitionSizeGB = 0,
         [bool]$ResizeToMaximum = $true
     )
 
@@ -455,11 +459,11 @@ function Build-OperationPlan {
         if ($PartitionDiskNumber -lt 0 -or $PartitionNumber -lt 1) {
             throw 'Enter the mounted VM disk number and partition number before resizing.'
         }
-        if (-not $ResizeToMaximum -and $PartitionSizeGB -lt 1) {
+        if (-not $ResizeToMaximum -and $PartitionSizeGB -le 0) {
             throw 'Enter a target partition size in GB, or choose maximum supported size.'
         }
 
-        $previewSize = if ($ResizeToMaximum) { 'maximum supported size' } else { "$PartitionSizeGB GB" }
+        $previewSize = if ($ResizeToMaximum) { 'maximum supported size' } else { ('{0:0.##} GB' -f $PartitionSizeGB) }
         [void]$ops.Add((New-PlanOperation -Kind 'ResizePartition' -Title "Resize mounted partition to $previewSize" -Preview "Resize-Partition -DiskNumber $PartitionDiskNumber -PartitionNumber $PartitionNumber" -Data ([pscustomobject]@{
             DiskNumber      = $PartitionDiskNumber
             PartitionNumber = $PartitionNumber
@@ -646,7 +650,7 @@ function Resize-MountedPartition {
     param(
         [Parameter(Mandatory = $true)][int]$DiskNumber,
         [Parameter(Mandatory = $true)][int]$PartitionNumber,
-        [int]$SizeGB,
+        [double]$SizeGB,
         [bool]$ToMaximum
     )
 
@@ -660,7 +664,7 @@ function Resize-MountedPartition {
         $supported.SizeMax
     }
     else {
-        [Int64]$SizeGB * 1GB
+        [Int64][Math]::Round($SizeGB * 1GB)
     }
 
     Resize-Partition -DiskNumber $DiskNumber -PartitionNumber $PartitionNumber -Size $targetSize -ErrorAction Stop
@@ -712,9 +716,24 @@ function Get-HostDiskRows {
 function Get-PartitionRows {
     param([Parameter(Mandatory = $true)][int]$DiskNumber)
 
+    $disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($partition in Get-Partition -DiskNumber $DiskNumber | Sort-Object PartitionNumber) {
         $volume = $partition | Get-Volume -ErrorAction SilentlyContinue
+        $supportedSizeMin = $null
+        $supportedSizeMax = $null
+        try {
+            $supportedSize = Get-PartitionSupportedSize -DiskNumber $DiskNumber -PartitionNumber $partition.PartitionNumber -ErrorAction Stop
+            $supportedSizeMin = [Int64]$supportedSize.SizeMin
+            $supportedSizeMax = [Int64]$supportedSize.SizeMax
+        }
+        catch {
+            $supportedSizeMin = $null
+            $supportedSizeMax = $null
+        }
+
+        $sizeBytes = [Int64]$partition.Size
+        $offsetBytes = [Int64]$partition.Offset
         [void]$rows.Add([pscustomobject]@{
             DiskNumber      = $DiskNumber
             PartitionNumber = $partition.PartitionNumber
@@ -722,8 +741,20 @@ function Get-PartitionRows {
             Type            = $partition.Type
             Size            = Format-ByteSize $partition.Size
             Offset          = Format-ByteSize $partition.Offset
+            SizeBytes       = $sizeBytes
+            OffsetBytes     = $offsetBytes
+            EndBytes        = $offsetBytes + $sizeBytes
+            DiskSizeBytes   = [Int64]$disk.Size
             FileSystem      = if ($volume) { $volume.FileSystem } else { '' }
             Label           = if ($volume) { $volume.FileSystemLabel } else { '' }
+            SupportedSizeMinBytes = $supportedSizeMin
+            SupportedSizeMaxBytes = $supportedSizeMax
+            SupportedSizeMin      = Format-ByteSize $supportedSizeMin
+            SupportedSizeMax      = Format-ByteSize $supportedSizeMax
+            IsResizable           = ($null -ne $supportedSizeMax)
+            IsUnallocated         = $false
+            DiskIsBoot            = [bool]$disk.IsBoot
+            DiskIsSystem          = [bool]$disk.IsSystem
         })
     }
     return $rows
@@ -1057,6 +1088,32 @@ function Start-AppGui {
                             </Grid>
                         </GroupBox>
 
+                        <GroupBox Header="Visual partition map">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="118"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock x:Name="PartitionMapHelpText" Text="Load a host disk to visualize partitions. Click a partition to select it, drag its right handle to set a resize target, or right-click for partition actions." Foreground="#A1A1AA" Margin="0,0,0,8"/>
+                                <Border Grid.Row="1" Background="#111113" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="6" Padding="8" ClipToBounds="True">
+                                    <Canvas x:Name="PartitionMapCanvas" MinHeight="90" Background="#111113" ClipToBounds="True"/>
+                                </Border>
+                                <Grid Grid.Row="2" Margin="0,10,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="SelectedPartitionText" Text="No partition selected." Foreground="#D4D4D8" VerticalAlignment="Center"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Button x:Name="PartitionSetMaxButton" Content="Resize to max"/>
+                                        <Button x:Name="PartitionClearResizeButton" Content="Clear resize"/>
+                                        <Button x:Name="PartitionCopyDetailsButton" Content="Copy details"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </GroupBox>
+
                         <GroupBox Header="Partitions on selected host disk">
                             <ListView x:Name="PartitionList" Height="180">
                                 <ListView.View>
@@ -1107,7 +1164,7 @@ function Start-AppGui {
             </TabItem>
         </TabControl>
 
-        <TextBlock Grid.Row="3" Margin="0,12,0,0" Foreground="#A1A1AA" Text="Version 0.1.0 - VMware-first virtual disk maintenance. Always back up before partition work."/>
+        <TextBlock Grid.Row="3" Margin="0,12,0,0" Foreground="#A1A1AA" Text="Version 0.2.0 - VMware-first virtual disk maintenance. Always back up before partition work."/>
     </Grid>
 </Window>
 '@
@@ -1125,7 +1182,9 @@ function Start-AppGui {
         'PrepareGPartedCheck', 'GPartedIsoText', 'BrowseIsoButton',
         'OpenGPartedButton', 'ResizePartitionCheck', 'PartitionDiskNumberText',
         'PartitionNumberText', 'ResizeToMaxCheck', 'PartitionSizeText',
-        'RefreshHostDisksButton', 'LoadPartitionsButton', 'PartitionList',
+        'RefreshHostDisksButton', 'LoadPartitionsButton', 'PartitionMapHelpText',
+        'PartitionMapCanvas', 'SelectedPartitionText', 'PartitionSetMaxButton',
+        'PartitionClearResizeButton', 'PartitionCopyDetailsButton', 'PartitionList',
         'BuildPlanButton', 'RunPlanButton', 'DryRunCheck', 'PlanText',
         'LogList', 'SaveLogButton', 'ClearLogButton'
     ) | ForEach-Object { $controls[$_] = $window.FindName($_) }
@@ -1174,6 +1233,561 @@ function Start-AppGui {
         catch {
             Show-AppError $_.Exception.Message
         }
+    }
+
+    function New-SolidBrush {
+        param([Parameter(Mandatory = $true)][string]$Color)
+
+        $brush = New-Object System.Windows.Media.SolidColorBrush ([System.Windows.Media.ColorConverter]::ConvertFromString($Color))
+        $brush.Freeze()
+        return $brush
+    }
+
+    function Reset-CurrentPlanPreview {
+        if ($script:CurrentPlan -and $script:CurrentPlan.Count -gt 0) {
+            $controls.PlanText.Text = 'Plan needs to be rebuilt because the partition selection or resize target changed.'
+        }
+        $script:CurrentPlan = @()
+    }
+
+    function Get-PartitionDisplayName {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if ([bool]$Row.IsUnallocated) {
+            return 'Unallocated'
+        }
+
+        $drive = [string]$Row.DriveLetter
+        $driveText = if (-not [string]::IsNullOrWhiteSpace($drive)) { " $drive`:" } else { '' }
+        return "Partition $($Row.PartitionNumber)$driveText"
+    }
+
+    function Get-PartitionDetailsText {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if ([bool]$Row.IsUnallocated) {
+            return @(
+                'Range: Unallocated'
+                "Disk: $($Row.DiskNumber)"
+                "Offset: $(Format-ByteSize $Row.OffsetBytes)"
+                "Size: $(Format-ByteSize $Row.SizeBytes)"
+            ) -join [Environment]::NewLine
+        }
+
+        $lines = @(
+            "Disk: $($Row.DiskNumber)"
+            "Partition: $($Row.PartitionNumber)"
+            "Drive letter: $($Row.DriveLetter)"
+            "Type: $($Row.Type)"
+            "File system: $($Row.FileSystem)"
+            "Label: $($Row.Label)"
+            "Offset: $($Row.Offset)"
+            "Size: $($Row.Size)"
+            "Supported minimum: $($Row.SupportedSizeMin)"
+            "Supported maximum: $($Row.SupportedSizeMax)"
+        )
+        return $lines -join [Environment]::NewLine
+    }
+
+    function Copy-PartitionDetails {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        [System.Windows.Clipboard]::SetText((Get-PartitionDetailsText -Row $Row))
+        Write-AppLog "Copied details for $(Get-PartitionDisplayName -Row $Row)." 'OK'
+    }
+
+    function Update-SelectedPartitionSummary {
+        if ($null -eq $script:SelectedPartitionRow) {
+            $controls.SelectedPartitionText.Text = 'No partition selected.'
+            return
+        }
+
+        $row = $script:SelectedPartitionRow
+        $summary = "$(Get-PartitionDisplayName -Row $row) | $($row.Type) | $($row.FileSystem) | $($row.Size)"
+        if ([bool]$controls.ResizePartitionCheck.IsChecked -and
+            [int]$row.DiskNumber -eq [int]$controls.PartitionDiskNumberText.Text -and
+            [int]$row.PartitionNumber -eq [int]$controls.PartitionNumberText.Text) {
+            if ([bool]$controls.ResizeToMaxCheck.IsChecked) {
+                $summary = "$summary | resize target: maximum supported size"
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace($controls.PartitionSizeText.Text)) {
+                $summary = "$summary | resize target: $($controls.PartitionSizeText.Text) GB"
+            }
+        }
+
+        $controls.SelectedPartitionText.Text = $summary
+    }
+
+    function Select-PartitionForEditing {
+        param(
+            [Parameter(Mandatory = $true)]$Row,
+            [bool]$SyncTable = $true,
+            [bool]$RedrawMap = $true
+        )
+
+        if ([bool]$Row.IsUnallocated) {
+            return
+        }
+
+        $script:SelectedPartitionRow = $Row
+        $controls.PartitionDiskNumberText.Text = [string]$Row.DiskNumber
+        $controls.PartitionNumberText.Text = [string]$Row.PartitionNumber
+
+        if ($SyncTable) {
+            try {
+                $script:PartitionSelectionUpdating = $true
+                foreach ($item in $controls.PartitionList.Items) {
+                    if ([int]$item.DiskNumber -eq [int]$Row.DiskNumber -and [int]$item.PartitionNumber -eq [int]$Row.PartitionNumber) {
+                        $controls.PartitionList.SelectedItem = $item
+                        $controls.PartitionList.ScrollIntoView($item)
+                        break
+                    }
+                }
+            }
+            finally {
+                $script:PartitionSelectionUpdating = $false
+            }
+        }
+
+        Update-SelectedPartitionSummary
+        Reset-CurrentPlanPreview
+        if ($RedrawMap) {
+            Redraw-PartitionMap
+        }
+    }
+
+    function Set-PartitionResizeMaximum {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if (-not (Test-PartitionResizeTargetAllowed -Row $Row)) {
+            return
+        }
+
+        Select-PartitionForEditing -Row $Row
+        $controls.ResizePartitionCheck.IsChecked = $true
+        $controls.ResizeToMaxCheck.IsChecked = $true
+        $controls.PartitionSizeText.Text = ''
+        Update-SelectedPartitionSummary
+        Reset-CurrentPlanPreview
+        Write-AppLog "Resize target set to maximum supported size for $(Get-PartitionDisplayName -Row $Row)." 'OK'
+    }
+
+    function Set-PartitionResizeTarget {
+        param(
+            [Parameter(Mandatory = $true)]$Row,
+            [Parameter(Mandatory = $true)][Int64]$TargetSizeBytes,
+            [bool]$FromDrag = $false
+        )
+
+        if (-not (Test-PartitionResizeTargetAllowed -Row $Row)) {
+            return
+        }
+
+        Select-PartitionForEditing -Row $Row -RedrawMap (-not $FromDrag)
+        $targetGb = [Math]::Max(0.01, [Math]::Round(($TargetSizeBytes / 1GB), 2))
+        $controls.ResizePartitionCheck.IsChecked = $true
+        $controls.ResizeToMaxCheck.IsChecked = $false
+        $controls.PartitionSizeText.Text = [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:0.##}', $targetGb)
+        Update-SelectedPartitionSummary
+        Reset-CurrentPlanPreview
+    }
+
+    function Clear-PartitionResizeTarget {
+        $controls.ResizePartitionCheck.IsChecked = $false
+        $controls.ResizeToMaxCheck.IsChecked = $true
+        $controls.PartitionSizeText.Text = ''
+        Update-SelectedPartitionSummary
+        Reset-CurrentPlanPreview
+        Write-AppLog 'Cleared partition resize target.' 'OK'
+    }
+
+    function Mark-GPartedWorkflowFromMap {
+        $controls.PrepareGPartedCheck.IsChecked = $true
+        Reset-CurrentPlanPreview
+        Write-AppLog 'GParted boot workflow marked from the partition map. Choose the ISO path before building the plan.' 'OK'
+    }
+
+    function Test-PartitionResizeTargetAllowed {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if ([bool]$Row.DiskIsBoot -or [bool]$Row.DiskIsSystem) {
+            Show-AppError 'Resize planning is blocked for the Windows boot/system disk. Choose a mounted VM disk, or use the GParted workflow for offline partition moves.'
+            return $false
+        }
+
+        return $true
+    }
+
+    function Get-PartitionMapColor {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if ([bool]$Row.IsUnallocated) {
+            return '#27272A'
+        }
+
+        $type = ([string]$Row.Type).ToLowerInvariant()
+        $fileSystem = ([string]$Row.FileSystem).ToUpperInvariant()
+        if ($type -match 'system|efi') {
+            return '#2563EB'
+        }
+        if ($type -match 'reserved') {
+            return '#52525B'
+        }
+        if ($type -match 'recovery') {
+            return '#7C3AED'
+        }
+        if ($fileSystem -eq 'NTFS') {
+            return '#0F766E'
+        }
+        if ($fileSystem -eq 'FAT32') {
+            return '#B45309'
+        }
+        return '#4F46E5'
+    }
+
+    function Get-NextPartitionBoundaryBytes {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        $nextBoundary = [Int64]$Row.DiskSizeBytes
+        foreach ($candidate in $script:PartitionMapRows) {
+            if ([Int64]$candidate.OffsetBytes -gt [Int64]$Row.OffsetBytes -and [Int64]$candidate.OffsetBytes -lt $nextBoundary) {
+                $nextBoundary = [Int64]$candidate.OffsetBytes
+            }
+        }
+        return $nextBoundary
+    }
+
+    function Get-MinimumResizeBytes {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        if ($null -ne $Row.SupportedSizeMinBytes -and [Int64]$Row.SupportedSizeMinBytes -gt 0) {
+            return [Int64]$Row.SupportedSizeMinBytes
+        }
+
+        return [Int64][Math]::Min([double]$Row.SizeBytes, [double]1GB)
+    }
+
+    function New-PartitionContextMenu {
+        param([Parameter(Mandatory = $true)]$Row)
+
+        $menu = New-Object System.Windows.Controls.ContextMenu
+        $partitionRow = $Row
+
+        if ([bool]$Row.IsUnallocated) {
+            $copyItem = New-Object System.Windows.Controls.MenuItem
+            $copyItem.Header = 'Copy range details'
+            $copyItem.Add_Click({ Copy-PartitionDetails -Row $partitionRow }.GetNewClosure())
+            [void]$menu.Items.Add($copyItem)
+
+            $gpartedItem = New-Object System.Windows.Controls.MenuItem
+            $gpartedItem.Header = 'Prepare GParted workflow'
+            $gpartedItem.Add_Click({ Mark-GPartedWorkflowFromMap }.GetNewClosure())
+            [void]$menu.Items.Add($gpartedItem)
+            return $menu
+        }
+
+        $selectItem = New-Object System.Windows.Controls.MenuItem
+        $selectItem.Header = 'Select partition'
+        $selectItem.Add_Click({ Select-PartitionForEditing -Row $partitionRow }.GetNewClosure())
+        [void]$menu.Items.Add($selectItem)
+
+        $resizeMaxItem = New-Object System.Windows.Controls.MenuItem
+        $resizeMaxItem.Header = 'Resize to maximum supported'
+        $resizeMaxItem.Add_Click({ Set-PartitionResizeMaximum -Row $partitionRow }.GetNewClosure())
+        [void]$menu.Items.Add($resizeMaxItem)
+
+        [void]$menu.Items.Add((New-Object System.Windows.Controls.Separator))
+
+        $gpartedItem = New-Object System.Windows.Controls.MenuItem
+        $gpartedItem.Header = 'Prepare GParted workflow'
+        $gpartedItem.Add_Click({ Mark-GPartedWorkflowFromMap }.GetNewClosure())
+        [void]$menu.Items.Add($gpartedItem)
+
+        $copyItem = New-Object System.Windows.Controls.MenuItem
+        $copyItem.Header = 'Copy partition details'
+        $copyItem.Add_Click({ Copy-PartitionDetails -Row $partitionRow }.GetNewClosure())
+        [void]$menu.Items.Add($copyItem)
+
+        return $menu
+    }
+
+    function Add-PartitionMapSegment {
+        param(
+            [Parameter(Mandatory = $true)]$Segment,
+            [Parameter(Mandatory = $true)][double]$MapWidth,
+            [Parameter(Mandatory = $true)][double]$Top,
+            [Parameter(Mandatory = $true)][double]$Height
+        )
+
+        if ([Int64]$Segment.DiskSizeBytes -le 0 -or [Int64]$Segment.SizeBytes -le 0) {
+            return
+        }
+
+        $left = ([double]$Segment.OffsetBytes / [double]$Segment.DiskSizeBytes) * $MapWidth
+        $width = ([double]$Segment.SizeBytes / [double]$Segment.DiskSizeBytes) * $MapWidth
+        if ($left -gt $MapWidth) {
+            return
+        }
+        if ($width -lt 4) {
+            $width = 4
+        }
+        if (($left + $width) -gt $MapWidth) {
+            $width = [Math]::Max(2, $MapWidth - $left)
+        }
+
+        $isSelected = $false
+        if (-not [bool]$Segment.IsUnallocated -and $null -ne $script:SelectedPartitionRow) {
+            $isSelected = ([int]$Segment.DiskNumber -eq [int]$script:SelectedPartitionRow.DiskNumber -and [int]$Segment.PartitionNumber -eq [int]$script:SelectedPartitionRow.PartitionNumber)
+        }
+
+        $border = New-Object System.Windows.Controls.Border
+        $border.Width = $width
+        $border.Height = $Height
+        $border.CornerRadius = New-Object System.Windows.CornerRadius 5
+        $border.BorderThickness = New-Object System.Windows.Thickness $(if ($isSelected) { 2 } else { 1 })
+        $border.BorderBrush = New-SolidBrush $(if ($isSelected) { '#F59E0B' } elseif ([bool]$Segment.IsUnallocated) { '#52525B' } else { '#1F2937' })
+        $border.Background = New-SolidBrush (Get-PartitionMapColor -Row $Segment)
+        $border.ClipToBounds = $true
+        $border.ContextMenu = New-PartitionContextMenu -Row $Segment
+        $border.ToolTip = Get-PartitionDetailsText -Row $Segment
+
+        $stack = New-Object System.Windows.Controls.StackPanel
+        $stack.Margin = New-Object System.Windows.Thickness 7,5,7,5
+
+        $title = New-Object System.Windows.Controls.TextBlock
+        $title.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $title.FontSize = 12
+        $title.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+        $title.Text = Get-PartitionDisplayName -Row $Segment
+        $title.Foreground = New-SolidBrush '#FFFFFF'
+        [void]$stack.Children.Add($title)
+
+        if ($width -gt 70) {
+            $detail = New-Object System.Windows.Controls.TextBlock
+            $detail.FontSize = 11
+            $detail.Foreground = New-SolidBrush '#E4E4E7'
+            $detail.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+            if ([bool]$Segment.IsUnallocated) {
+                $detail.Text = Format-ByteSize $Segment.SizeBytes
+            }
+            else {
+                $detail.Text = "$($Segment.Size) $($Segment.FileSystem)"
+            }
+            [void]$stack.Children.Add($detail)
+        }
+
+        $border.Child = $stack
+        [System.Windows.Controls.Canvas]::SetLeft($border, $left)
+        [System.Windows.Controls.Canvas]::SetTop($border, $Top)
+        [void]$controls.PartitionMapCanvas.Children.Add($border)
+
+        if (-not [bool]$Segment.IsUnallocated) {
+            $partitionRow = $Segment
+            $border.Add_MouseLeftButtonDown({
+                param($sender, $eventArgs)
+                Select-PartitionForEditing -Row $partitionRow
+                $eventArgs.Handled = $true
+            }.GetNewClosure())
+            $border.Add_MouseRightButtonDown({
+                param($sender, $eventArgs)
+                Select-PartitionForEditing -Row $partitionRow -RedrawMap $false
+            }.GetNewClosure())
+
+            $handle = New-Object System.Windows.Controls.Border
+            $handle.Width = 7
+            $handle.Height = $Height
+            $handle.CornerRadius = New-Object System.Windows.CornerRadius 3
+            $handle.Background = New-SolidBrush '#FDE68A'
+            $handle.Opacity = 0.9
+            $handle.Cursor = [System.Windows.Input.Cursors]::SizeWE
+            $handle.ToolTip = 'Drag to set a partition resize target'
+            $handle.Add_MouseLeftButtonDown({
+                param($sender, $eventArgs)
+                Start-PartitionResizeDrag -Row $partitionRow -EventArgs $eventArgs
+                $eventArgs.Handled = $true
+            }.GetNewClosure())
+
+            $handleLeft = [Math]::Min($MapWidth - 7, [Math]::Max(0, $left + $width - 4))
+            [System.Windows.Controls.Canvas]::SetLeft($handle, $handleLeft)
+            [System.Windows.Controls.Canvas]::SetTop($handle, $Top)
+            [void]$controls.PartitionMapCanvas.Children.Add($handle)
+        }
+    }
+
+    function Redraw-PartitionMap {
+        $canvas = $controls.PartitionMapCanvas
+        $canvas.Children.Clear()
+
+        $mapWidth = [double]$canvas.ActualWidth
+        if ($mapWidth -lt 120) {
+            $mapWidth = [double]$canvas.RenderSize.Width
+        }
+        if ($mapWidth -lt 120) {
+            $mapWidth = 860
+        }
+
+        if (-not $script:PartitionMapRows -or $script:PartitionMapRows.Count -eq 0) {
+            $emptyText = New-Object System.Windows.Controls.TextBlock
+            $emptyText.Text = 'Select a host disk and load partitions.'
+            $emptyText.Foreground = New-SolidBrush '#A1A1AA'
+            [System.Windows.Controls.Canvas]::SetLeft($emptyText, 12)
+            [System.Windows.Controls.Canvas]::SetTop($emptyText, 34)
+            [void]$canvas.Children.Add($emptyText)
+            return
+        }
+
+        $diskSize = [Int64]$script:PartitionMapRows[0].DiskSizeBytes
+        $cursor = [Int64]0
+        $top = 12.0
+        $height = 66.0
+        foreach ($row in ($script:PartitionMapRows | Sort-Object OffsetBytes)) {
+            if ([Int64]$row.OffsetBytes -gt $cursor) {
+                $gapSize = [Int64]$row.OffsetBytes - $cursor
+                $gap = [pscustomobject]@{
+                    DiskNumber = $row.DiskNumber
+                    PartitionNumber = 0
+                    DriveLetter = ''
+                    Type = 'Unallocated'
+                    Size = Format-ByteSize $gapSize
+                    Offset = Format-ByteSize $cursor
+                    SizeBytes = $gapSize
+                    OffsetBytes = $cursor
+                    EndBytes = [Int64]$row.OffsetBytes
+                    DiskSizeBytes = $diskSize
+                    FileSystem = ''
+                    Label = ''
+                    IsUnallocated = $true
+                }
+                Add-PartitionMapSegment -Segment $gap -MapWidth $mapWidth -Top $top -Height $height
+            }
+
+            Add-PartitionMapSegment -Segment $row -MapWidth $mapWidth -Top $top -Height $height
+            $cursor = [Int64]$row.EndBytes
+        }
+
+        if ($diskSize -gt $cursor) {
+            $gapSize = $diskSize - $cursor
+            $lastDiskNumber = $script:PartitionMapRows[0].DiskNumber
+            $gap = [pscustomobject]@{
+                DiskNumber = $lastDiskNumber
+                PartitionNumber = 0
+                DriveLetter = ''
+                Type = 'Unallocated'
+                Size = Format-ByteSize $gapSize
+                Offset = Format-ByteSize $cursor
+                SizeBytes = $gapSize
+                OffsetBytes = $cursor
+                EndBytes = $diskSize
+                DiskSizeBytes = $diskSize
+                FileSystem = ''
+                Label = ''
+                IsUnallocated = $true
+            }
+            Add-PartitionMapSegment -Segment $gap -MapWidth $mapWidth -Top $top -Height $height
+        }
+
+        $diskLabel = New-Object System.Windows.Controls.TextBlock
+        $diskLabel.Text = "Disk $($script:PartitionMapRows[0].DiskNumber) | $(Format-ByteSize $diskSize)"
+        $diskLabel.Foreground = New-SolidBrush '#A1A1AA'
+        $diskLabel.FontSize = 11
+        [System.Windows.Controls.Canvas]::SetLeft($diskLabel, 0)
+        [System.Windows.Controls.Canvas]::SetTop($diskLabel, 84)
+        [void]$canvas.Children.Add($diskLabel)
+    }
+
+    function Load-PartitionsForDisk {
+        param([Parameter(Mandatory = $true)][int]$DiskNumber)
+
+        $rows = @(Get-PartitionRows -DiskNumber $DiskNumber)
+        $script:PartitionMapRows = $rows
+        $script:SelectedPartitionRow = $null
+        $controls.PartitionDiskNumberText.Text = [string]$DiskNumber
+        $controls.PartitionNumberText.Text = ''
+        $controls.ResizePartitionCheck.IsChecked = $false
+        $controls.ResizeToMaxCheck.IsChecked = $true
+        $controls.PartitionSizeText.Text = ''
+        $controls.PartitionList.ItemsSource = $rows
+        $controls.SelectedPartitionText.Text = 'No partition selected.'
+        Reset-CurrentPlanPreview
+        Redraw-PartitionMap
+        Write-AppLog "Loaded $($rows.Count) partition(s) for disk $DiskNumber." 'OK'
+    }
+
+    function Start-PartitionResizeDrag {
+        param(
+            [Parameter(Mandatory = $true)]$Row,
+            [Parameter(Mandatory = $true)][System.Windows.Input.MouseButtonEventArgs]$EventArgs
+        )
+
+        if (-not (Test-PartitionResizeTargetAllowed -Row $Row)) {
+            return
+        }
+
+        Select-PartitionForEditing -Row $Row -RedrawMap $false
+        $guide = New-Object System.Windows.Shapes.Rectangle
+        $guide.Width = 3
+        $guide.Height = 74
+        $guide.Fill = New-SolidBrush '#F59E0B'
+        $guide.IsHitTestVisible = $false
+        [System.Windows.Controls.Canvas]::SetTop($guide, 8)
+        [void]$controls.PartitionMapCanvas.Children.Add($guide)
+
+        $script:PartitionDragState = [pscustomobject]@{
+            Row = $Row
+            Guide = $guide
+            DiskSizeBytes = [Int64]$Row.DiskSizeBytes
+            MinSizeBytes = Get-MinimumResizeBytes -Row $Row
+            MaxEndBytes = Get-NextPartitionBoundaryBytes -Row $Row
+            LastTargetBytes = [Int64]$Row.SizeBytes
+        }
+
+        [void][System.Windows.Input.Mouse]::Capture($controls.PartitionMapCanvas)
+        Update-PartitionResizeDrag -EventArgs $EventArgs
+    }
+
+    function Update-PartitionResizeDrag {
+        param([Parameter(Mandatory = $true)][System.Windows.Input.MouseEventArgs]$EventArgs)
+
+        if ($null -eq $script:PartitionDragState) {
+            return
+        }
+
+        $canvas = $controls.PartitionMapCanvas
+        $mapWidth = [Math]::Max(1, [double]$canvas.ActualWidth)
+        $position = $EventArgs.GetPosition($canvas)
+        $x = [Math]::Min($mapWidth, [Math]::Max(0, [double]$position.X))
+        $row = $script:PartitionDragState.Row
+        $diskSize = [double]$script:PartitionDragState.DiskSizeBytes
+        $targetEnd = [Int64][Math]::Round(($x / $mapWidth) * $diskSize)
+        $minEnd = [Int64]$row.OffsetBytes + [Int64]$script:PartitionDragState.MinSizeBytes
+        $maxEnd = [Int64]$script:PartitionDragState.MaxEndBytes
+        if ($targetEnd -lt $minEnd) {
+            $targetEnd = $minEnd
+        }
+        if ($targetEnd -gt $maxEnd) {
+            $targetEnd = $maxEnd
+        }
+
+        $targetSize = [Int64]($targetEnd - [Int64]$row.OffsetBytes)
+        $script:PartitionDragState.LastTargetBytes = $targetSize
+        Set-PartitionResizeTarget -Row $row -TargetSizeBytes $targetSize -FromDrag $true
+
+        $guideLeft = ([double]$targetEnd / $diskSize) * $mapWidth
+        [System.Windows.Controls.Canvas]::SetLeft($script:PartitionDragState.Guide, [Math]::Min($mapWidth - 3, [Math]::Max(0, $guideLeft - 1.5)))
+    }
+
+    function Complete-PartitionResizeDrag {
+        if ($null -eq $script:PartitionDragState) {
+            return
+        }
+
+        $row = $script:PartitionDragState.Row
+        $targetSize = [Int64]$script:PartitionDragState.LastTargetBytes
+        [void][System.Windows.Input.Mouse]::Capture($null)
+        [void]$controls.PartitionMapCanvas.Children.Remove($script:PartitionDragState.Guide)
+        $script:PartitionDragState = $null
+        Redraw-PartitionMap
+        Write-AppLog "Drag resize target set for $(Get-PartitionDisplayName -Row $row): $(Format-ByteSize $targetSize)." 'OK'
     }
 
     $controls.BrowseVmxButton.Add_Click({
@@ -1242,14 +1856,19 @@ function Start-AppGui {
     $controls.HostDiskList.Add_SelectionChanged({
         if ($controls.HostDiskList.SelectedItem) {
             $controls.PartitionDiskNumberText.Text = [string]$controls.HostDiskList.SelectedItem.Number
+            try {
+                Load-PartitionsForDisk -DiskNumber ([int]$controls.HostDiskList.SelectedItem.Number)
+            }
+            catch {
+                Show-AppError $_.Exception.Message
+            }
         }
     })
 
     $controls.LoadPartitionsButton.Add_Click({
         try {
             $diskNumber = [int]$controls.PartitionDiskNumberText.Text
-            $controls.PartitionList.ItemsSource = @(Get-PartitionRows -DiskNumber $diskNumber)
-            Write-AppLog "Loaded partitions for disk $diskNumber." 'OK'
+            Load-PartitionsForDisk -DiskNumber $diskNumber
         }
         catch {
             Show-AppError $_.Exception.Message
@@ -1257,8 +1876,29 @@ function Start-AppGui {
     })
 
     $controls.PartitionList.Add_SelectionChanged({
-        if ($controls.PartitionList.SelectedItem) {
-            $controls.PartitionNumberText.Text = [string]$controls.PartitionList.SelectedItem.PartitionNumber
+        if (-not $script:PartitionSelectionUpdating -and $controls.PartitionList.SelectedItem) {
+            Select-PartitionForEditing -Row $controls.PartitionList.SelectedItem -SyncTable $false
+        }
+    })
+
+    $controls.PartitionMapCanvas.Add_SizeChanged({ Redraw-PartitionMap })
+    $controls.PartitionMapCanvas.Add_MouseMove({
+        param($sender, $eventArgs)
+        Update-PartitionResizeDrag -EventArgs $eventArgs
+    })
+    $controls.PartitionMapCanvas.Add_MouseLeftButtonUp({ Complete-PartitionResizeDrag })
+
+    $controls.PartitionSetMaxButton.Add_Click({
+        if ($script:SelectedPartitionRow) {
+            Set-PartitionResizeMaximum -Row $script:SelectedPartitionRow
+        }
+    })
+
+    $controls.PartitionClearResizeButton.Add_Click({ Clear-PartitionResizeTarget })
+
+    $controls.PartitionCopyDetailsButton.Add_Click({
+        if ($script:SelectedPartitionRow) {
+            Copy-PartitionDetails -Row $script:SelectedPartitionRow
         }
     })
 
@@ -1271,7 +1911,7 @@ function Start-AppGui {
 
             $diskNumber = -1
             $partitionNumber = -1
-            $partitionSize = 0
+            $partitionSize = 0.0
             if (-not [string]::IsNullOrWhiteSpace($controls.PartitionDiskNumberText.Text)) {
                 $diskNumber = [int]$controls.PartitionDiskNumberText.Text
             }
@@ -1279,7 +1919,7 @@ function Start-AppGui {
                 $partitionNumber = [int]$controls.PartitionNumberText.Text
             }
             if (-not [string]::IsNullOrWhiteSpace($controls.PartitionSizeText.Text)) {
-                $partitionSize = [int]$controls.PartitionSizeText.Text
+                $partitionSize = [double]::Parse($controls.PartitionSizeText.Text, [Globalization.CultureInfo]::InvariantCulture)
             }
 
             $script:CurrentPlan = @(Build-OperationPlan `
