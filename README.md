@@ -12,9 +12,9 @@
   <a href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/tag/v0.1.0">First release v0.1.0</a>
 </p>
 
-PowerShell + WPF desktop tool for VMware-oriented virtual disk partition work.
+A Windows desktop tool for expanding VMware virtual disks and reviewing partition layouts.
 
-It is built for the practical VM workflow: expand a virtual disk, mount and resize supported Windows partitions when they are exposed to the host, and prepare the VM to boot into GParted Live for partition moves or complex layout changes.
+Load a VMX file, select a disk, and review the planned commands. Expand the virtual disk, resize supported partitions that Windows can access, or prepare the VM to boot GParted Live for partition moves.
 
 ## What it does
 
@@ -32,7 +32,7 @@ It is built for the practical VM workflow: expand a virtual disk, mount and resi
 
 ## Important safety note
 
-Partition movement is intentionally handled by booting the VM into GParted Live. Moving partitions from the host by editing partition tables and file systems directly is risky, VM-format-specific, and easy to get wrong. This app gives you the VMware-first workflow around it: back up, expand the virtual disk, attach the rescue ISO, and boot into a proven partition editor.
+Use GParted Live inside the VM to move partitions. This app can back up and expand the virtual disk, attach the ISO, and prepare the boot settings; it does not move partitions by editing the guest file system from the host.
 
 Always power off the VM and take a VMware snapshot before making partition changes.
 
@@ -89,7 +89,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\VMPartitionWorkben
 
 ## Build the release
 
-The repository is intentionally SDK-light. It uses PS2EXE to create a portable executable.
+The build script uses PS2EXE to create a portable executable.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build\Build-Release.ps1
