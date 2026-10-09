@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>VM Partition Workbench</title>
-  <meta name="description" content="A VMware-first partition maintenance workbench with visual partition maps, virtual disk resize, mounted partition resize, and GParted boot workflows.">
+  <meta name="description" content="A Windows tool for expanding VMware virtual disks, reviewing partition layouts, and preparing a VM to boot GParted Live.">
   <style>
     :root {
       color-scheme: dark;
@@ -402,7 +402,7 @@
     <div class="hero-inner">
       <p class="eyebrow">PowerShell + WPF - portable exe - MIT licensed</p>
       <h1>VM Partition Workbench</h1>
-      <p class="hero-copy">A VMware-first desktop tool for expanding virtual disks, visualizing host-exposed partitions, dragging resize targets, and preparing GParted Live boot workflows for partition moves.</p>
+      <p class="hero-copy">Expand a VMware virtual disk, inspect partitions that Windows can access, and review resize commands before running them. You can also attach GParted Live for partition moves inside the VM.</p>
       <div class="actions">
         <a class="button" data-download="windows-exe" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Download latest exe</a>
         <a class="button secondary" data-download="portable-zip" href="https://github.com/eMacTh3Creator/VMPartitionWorkbench/releases/latest">Portable zip</a>
@@ -417,8 +417,8 @@
     <section id="features">
       <div class="section-inner">
         <div class="section-title">
-          <h2>Built around the real VM resize job</h2>
-          <p>Start from the VMX, choose the backing disk, inspect partitions visually, review a command plan, and keep the host boot disk out of the blast radius.</p>
+          <h2>Review the disk before resizing</h2>
+          <p>Open the VMX, select a disk, and review its partition layout and planned commands. The app blocks changes to the Windows boot and system disk.</p>
         </div>
         <div class="feature-grid">
           <article class="feature">
@@ -438,8 +438,8 @@
             <p>Shows host-exposed partitions as a disk map with click selection, right-click actions, and drag-to-resize plan targeting.</p>
           </article>
           <article class="feature">
-            <strong>GParted move workflow</strong>
-            <p>Attaches a GParted Live ISO to the VMX and adds boot delay, giving you a proven editor for partition moves.</p>
+            <strong>Prepare GParted Live</strong>
+            <p>Attaches a GParted Live ISO to the VMX and adds boot delay, so you can move partitions inside the VM.</p>
           </article>
           <article class="feature">
             <strong>Resize guardrails</strong>
@@ -454,7 +454,7 @@
         <div class="workflow">
           <div>
             <div class="section-title">
-              <h2>The move-safe VMware path</h2>
+              <h2>Resize the disk and adjust partitions</h2>
               <p>Host tooling grows the virtual disk. GParted Live moves partitions inside the guest disk where the file systems can be handled correctly.</p>
             </div>
             <ol class="steps">
@@ -463,7 +463,7 @@
               <li>Expand the disk container or mount a VHD/VHDX, then use the visual map to select and stage supported resize targets.</li>
               <li>Attach GParted Live to move partitions or perform complex layout edits.</li>
             </ol>
-            <div class="callout">Partition moves are intentionally delegated to GParted Live. The app prepares the VM and keeps the workflow repeatable instead of raw-editing file systems from the host.</div>
+            <div class="callout">Use GParted Live inside the VM to move partitions. This app attaches the ISO and prepares the boot settings.</div>
           </div>
           <img class="shot" src="docs/assets/app-preview.png" alt="VM Partition Workbench desktop app preview">
         </div>
@@ -514,7 +514,7 @@
       <div class="section-inner">
         <div class="section-title">
           <h2>Quick start</h2>
-          <p>Open as administrator, load a VMX, inspect the disk, then build a plan before touching anything.</p>
+          <p>Open as administrator, load a VMX, inspect the disk, then review the planned commands before running them.</p>
         </div>
         <pre><code>powershell.exe -NoProfile -ExecutionPolicy Bypass -STA -File .\src\VMPartitionWorkbench.ps1</code></pre>
       </div>
